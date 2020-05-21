@@ -6,7 +6,8 @@ import json
 import os
 
 STUMP = "https://www.finanzen.net/"
-SAVEPATH = "G:/Coding/FinanceBot/data/"
+#SAVEPATH = "G:/Coding/FinanceBot/data/"
+SAVEPATH = "../data/"
 
 NEWSPATH = "https://newslookup.com/results?ovs=&dp=&mt=-1&mtx=0&tp=&s=&groupby=no&cat=-1&fmt=&ut=&mkt=0&mktx=0&q=lufthansa&m="
 GNEWSPATH = "https://news.google.com/search?q=lufthansa&hl=en-GB&gl=GB&ceid=GB:en"
@@ -98,4 +99,4 @@ def crawlStock(name):
     print("DONE!")
 
 current = "deutsche_telekom-aktie"
-#crawlStock(current)
+crawlStock(current)
