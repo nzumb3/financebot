@@ -1,4 +1,5 @@
 from bs4 import BeautifulSoup
+from pathlib import Path
 import requests
 import time
 from datetime import datetime as dt
@@ -7,10 +8,10 @@ import os
 
 STUMP = "https://www.finanzen.net/"
 #SAVEPATH = "G:/Coding/FinanceBot/data/"
-SAVEPATH = "../data/"
+SAVEPATH = str((Path(__file__).parent / "../data/").resolve()) + "/"
 
-NEWSPATH = "https://newslookup.com/results?ovs=&dp=&mt=-1&mtx=0&tp=&s=&groupby=no&cat=-1&fmt=&ut=&mkt=0&mktx=0&q=lufthansa&m="
-GNEWSPATH = "https://news.google.com/search?q=lufthansa&hl=en-GB&gl=GB&ceid=GB:en"
+ENNEWS = "https://newslookup.com/results?p={}&q={}&dp=4&mt=-1&ps=10&s=1&cat=-1&fmt=&groupby=no&site=&dp=4"
+DENEWS = "https://www.finanzen.net/nachrichten/alle/{}/{}" #no -aktie     de lufthansa
 
 def extractWKN(soup):
     return soup.title.string.split(" | ")[-1][1:-1].split(",")[0]
@@ -72,6 +73,50 @@ def extractRivals(soup, current):
 def extractName(soup):
     return "_".join(list(filter(lambda x: x.lower() != "aktie",soup.title.string.split(" | ")[0].split(" "))))
 
+def exctractEnText(name):
+    times, bodies, out = [], [], []
+    for i in range(1,3):
+        tmppath = ENNEWS.format(i, current[:-6].replace("_", "+"))
+        res = requests.get(tmppath)
+        soup = BeautifulSoup(res.content, features="lxml")
+        for (a, p) in zip(soup.find_all("a", attrs={"class": "title"}), soup.find_all("p", attrs={"class": "desc"})):
+            bodies.append(a.text + p.text)
+        for span in soup.find_all("span", attrs={"class": "stime"}):
+            times.append(span.text[:-4])
+    for (b, t) in zip(bodies, times):
+        out.append((t, b))
+    return out
+
+def extractHeaders(name):
+    deres = requests.get(DENEWS.format("de", name[:-6].replace(" ", "_")))
+    enres = requests.get(DENEWS.format("en", name[:-6].replace(" ", "_")))
+    desoup = BeautifulSoup(deres.content, features="lxml")
+    ensoup = BeautifulSoup(enres.content, features="lxml")
+    deheaders, detimes = [], []
+    enheaders, entimes = [], []
+    out = {"de":[], "en": []}
+    for a in desoup.find_all("a", attrs={"class": "teaser"}):
+        deheaders.append(a.text)
+    for td in desoup.find_all("td"):
+        for div in td.find_all("div"):
+            if div.text[-3:] == "Uhr":
+                detimes.append(dt.now().strftime("%Y.%m.%d"))
+            elif div.text[-2:] == "20":
+                detimes.append(div.text)
+    for a in ensoup.find_all("a", attrs={"class": "teaser"}):
+        enheaders.append(a.text)
+    for td in ensoup.find_all("td"):
+        for div in td.find_all("div"):
+            if div.text[-3:] == "Uhr":
+                entimes.append(dt.now().strftime("%Y.%m.%d"))
+            elif div.text[-2:] == "20":
+                entimes.append(div.text)
+    for (h, t) in zip(deheaders, detimes):
+        out['de'].append((t, h))
+    for (h, t) in zip(enheaders, entimes):
+        out['en'].append((t, h))
+    return out
+
 def crawlStock(name):
     if name[-6:] != "-aktie":
         name += "-aktie"
@@ -92,6 +137,7 @@ def crawlStock(name):
     stock_sample["rivals"] = extractRivals(comp_soup, name)
     print("Saving...")
     #with open(SAVEPATH + str(round(dt.now().timestamp())) + ".json", "w") as f:
+    os.mkdir(SAVEPATH)
     path = SAVEPATH + dt.now().strftime("%Y%m%d") + "/"
     os.mkdir(path)
     with open(path + str(round(dt.now().timestamp())) + ".json", "w") as f:
@@ -99,4 +145,12 @@ def crawlStock(name):
     print("DONE!")
 
 current = "deutsche_telekom-aktie"
-crawlStock(current)
+#crawlStock(current)
+#res = requests.get()
+#depath = DENEWS.format(current[:-6].replace("_", "+"))
+#enpath = ENNEWS.format(current[:-6].replace("_", "+"))
+
+#res = requests.get(enpath)
+#soup = BeautifulSoup(res.content, features="lxml")
+
+print(extractHeaders(current))
