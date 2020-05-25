@@ -127,7 +127,8 @@ def crawlStock(name):
         "postfix": name,
         "name": extractName(soup),
         "wkn": extractWKN(soup),
-        "ts": dt.now().strftime("%Y.%m.%d %H:%M"),
+        "time": dt.now().strftime("%Y.%m.%d %H:%M"),
+        "ts": round(time.time()),
         "features": extractTableFeatures(soup)
     }
     print("Zzzzz...")
@@ -135,17 +136,26 @@ def crawlStock(name):
     print("Crawling Comparison")
     comp_soup = getComparisonSoup(soup)
     stock_sample["rivals"] = extractRivals(comp_soup, name)
+    print("Getting Text Data")
+    txt_dict = extractHeaders(name)
+    txt_dict["en"] += exctractEnText(name)
+    stock_sample["text_data"] = txt_dict
     print("Saving...")
-    #with open(SAVEPATH + str(round(dt.now().timestamp())) + ".json", "w") as f:
-    os.mkdir(SAVEPATH)
     path = SAVEPATH + dt.now().strftime("%Y%m%d") + "/"
-    os.mkdir(path)
-    with open(path + str(round(dt.now().timestamp())) + ".json", "w") as f:
+    try:
+        os.mkdir(SAVEPATH)
+    except:
+        True
+    try:
+        os.mkdir(path) 
+    except:
+        True
+    with open(path + name + ".json", "w") as f:
         json.dump(stock_sample, f)
     print("DONE!")
 
-current = "deutsche_telekom-aktie"
-#crawlStock(current)
+current = "apple-aktie"
+crawlStock(current)
 #res = requests.get()
 #depath = DENEWS.format(current[:-6].replace("_", "+"))
 #enpath = ENNEWS.format(current[:-6].replace("_", "+"))
@@ -153,4 +163,4 @@ current = "deutsche_telekom-aktie"
 #res = requests.get(enpath)
 #soup = BeautifulSoup(res.content, features="lxml")
 
-print(extractHeaders(current))
+#print(extractHeaders(current))
