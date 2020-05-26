@@ -5,6 +5,7 @@ import time
 from datetime import datetime as dt
 import json
 import os
+import numpy as np
 
 STUMP = "https://www.finanzen.net/"
 #SAVEPATH = "G:/Coding/FinanceBot/data/"
@@ -59,6 +60,7 @@ def getComparisonSoup(soup):
         if a.text == "Vergleich":
             link += a["href"]
             break
+    timeout()
     r = requests.get(link)
     return BeautifulSoup(r.content, features="lxml")
 
@@ -76,7 +78,8 @@ def extractName(soup):
 def exctractEnText(name):
     times, bodies, out = [], [], []
     for i in range(1,3):
-        tmppath = ENNEWS.format(i, current[:-6].replace("_", "+"))
+        tmppath = ENNEWS.format(i, name[:-6].replace("_", "+"))
+        timeout()
         res = requests.get(tmppath)
         soup = BeautifulSoup(res.content, features="lxml")
         for (a, p) in zip(soup.find_all("a", attrs={"class": "title"}), soup.find_all("p", attrs={"class": "desc"})):
@@ -88,7 +91,9 @@ def exctractEnText(name):
     return out
 
 def extractHeaders(name):
+    timeout()
     deres = requests.get(DENEWS.format("de", name[:-6].replace(" ", "_")))
+    timeout()
     enres = requests.get(DENEWS.format("en", name[:-6].replace(" ", "_")))
     desoup = BeautifulSoup(deres.content, features="lxml")
     ensoup = BeautifulSoup(enres.content, features="lxml")
@@ -121,6 +126,7 @@ def crawlStock(name):
     if name[-6:] != "-aktie":
         name += "-aktie"
     print("Crawling {}".format(name))
+    timeout()
     res = requests.get(STUMP + "aktien/" + name)
     soup = BeautifulSoup(res.content, features="lxml")
     stock_sample = {
@@ -131,8 +137,6 @@ def crawlStock(name):
         "ts": round(time.time()),
         "features": extractTableFeatures(soup)
     }
-    print("Zzzzz...")
-    time.sleep(5)
     print("Crawling Comparison")
     comp_soup = getComparisonSoup(soup)
     stock_sample["rivals"] = extractRivals(comp_soup, name)
@@ -154,13 +158,84 @@ def crawlStock(name):
         json.dump(stock_sample, f)
     print("DONE!")
 
-current = "apple-aktie"
-crawlStock(current)
-#res = requests.get()
-#depath = DENEWS.format(current[:-6].replace("_", "+"))
-#enpath = ENNEWS.format(current[:-6].replace("_", "+"))
+def timeout(long= False):
+    tosleep = 1
+    if long:
+        tosleep = np.random.normal(loc=2, scale=0.5)
+    else:
+        tosleep = np.random.normal(loc=0.5, scale=0.5)
+    if tosleep < 0.05:
+        tosleep = 0.5
+    time.sleep(tosleep)
 
-#res = requests.get(enpath)
-#soup = BeautifulSoup(res.content, features="lxml")
+def getToCrawl():
+    out = []
+    with open(SAVEPATH + "stocks.txt", "r") as f:
+        for line in f.readlines():
+            out.append(line.replace("\n", ""))
+    return out
 
-#print(extractHeaders(current))
+def removeIdentical(li):
+    filtered = []
+    for a in li:
+        flag = True
+        for b in filtered:
+            total = len(b)
+            cnt = 0
+            for k in range(len(b)):
+                if k >= len(a):
+                    break
+                if a[k] == b[k]:
+                    cnt += 1
+                else:
+                    break
+            if cnt/float(total) >= 0.95:
+                flag = False
+                break
+        if len(filtered) == 0 or flag:
+            filtered.append(a)
+    return filtered
+
+def extendToCrawl():
+    toCrawl = removeIdentical(getToCrawl())
+    new = []
+    print("Began with {} stocks.".format(len(toCrawl)))
+    for stock in toCrawl:
+        if stock not in new:
+            timeout(True)
+            res = requests.get(STUMP + "aktien/" + stock)
+            soup = BeautifulSoup(res.content, features="lxml")
+            soup = getComparisonSoup(soup)
+            rivals = extractRivals(soup, stock)
+            new.append(stock)
+            for r in rivals:
+                if r not in toCrawl and r not in new:
+                    new.append(r)
+    print("New number of stocks: {}".format(len(new)))
+    if len(new) != len(toCrawl):
+        os.remove(SAVEPATH + "stocks.txt")
+        with open(SAVEPATH + "stocks.txt", "w") as f:
+            for stock in new:
+                f.write(stock + "\n")
+        print("SAVED!")
+
+if __name__ == "__main__":
+    #extendToCrawl()
+    toCrawl = getToCrawl()
+    total = len(toCrawl)
+    i = 0
+    new = []
+    for stock in toCrawl:
+        try:
+            crawlStock(stock)
+            new.append(stock)
+        except:
+            print("Error with {}".format(stock))
+        i += 1
+        print("FINISHED: {:03.2f}".format(float(i)/total*100))
+    if len(new) != len(toCrawl):
+        os.remove(SAVEPATH + "stocks.txt")
+        with open(SAVEPATH + "stocks.txt", "w") as f:
+            for stock in new:
+                f.write(stock + "\n")
+        print("SAVED!")
