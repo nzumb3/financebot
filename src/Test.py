@@ -99,7 +99,7 @@ def extractHeaders(name):
     ensoup = BeautifulSoup(enres.content, features="lxml")
     deheaders, detimes = [], []
     enheaders, entimes = [], []
-    out = {"de":[], "en": []}
+    out = {"finanzen_de":[], "finanzen_en": []}
     for a in desoup.find_all("a", attrs={"class": "teaser"}):
         deheaders.append(a.text)
     for td in desoup.find_all("td"):
@@ -117,9 +117,9 @@ def extractHeaders(name):
             elif div.text[-2:] == "20":
                 entimes.append(div.text)
     for (h, t) in zip(deheaders, detimes):
-        out['de'].append((t, h))
+        out['finanzen_de'].append((t, h))
     for (h, t) in zip(enheaders, entimes):
-        out['en'].append((t, h))
+        out['finanzen_en'].append((t, h))
     return out
 
 def crawlStock(name):
@@ -142,7 +142,7 @@ def crawlStock(name):
     stock_sample["rivals"] = extractRivals(comp_soup, name)
     print("Getting Text Data")
     txt_dict = extractHeaders(name)
-    txt_dict["en"] += exctractEnText(name)
+    txt_dict["newslookup"] = exctractEnText(name)
     stock_sample["text_data"] = txt_dict
     print("Saving...")
     path = SAVEPATH + dt.now().strftime("%Y%m%d") + "/"
