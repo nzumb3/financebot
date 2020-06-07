@@ -220,7 +220,7 @@ def extendToCrawl():
         print("SAVED!")
 
 if __name__ == "__main__":
-    #extendToCrawl()
+    extendToCrawl()
     toCrawl = getToCrawl()
     total = len(toCrawl)
     i = 0
