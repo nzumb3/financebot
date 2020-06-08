@@ -6,13 +6,68 @@ from datetime import datetime as dt
 import json
 import os
 import numpy as np
+from newsapi import NewsApiClient
 
 STUMP = "https://www.finanzen.net/"
-#SAVEPATH = "G:/Coding/FinanceBot/data/"
 SAVEPATH = str((Path(__file__).parent / "../data/").resolve()) + "/"
-
 ENNEWS = "https://newslookup.com/results?p={}&q={}&dp=4&mt=-1&ps=10&s=1&cat=-1&fmt=&groupby=no&site=&dp=4"
 DENEWS = "https://www.finanzen.net/nachrichten/alle/{}/{}" #no -aktie     de lufthansa
+
+NEWS_API = "20d6fa82bc7d4423b1b6fb50c73ee796"
+
+def make_api_calls(name):
+    api = NewsApiClient(api_key=NEWS_API)
+    query = '+"{}"'.format(name.replace("_", " "))
+    articles_en_1 = api.get_everything(
+        q= query,
+        language= 'en',
+        page_size=20,
+        page=1
+    )
+
+    articles_en_2 = api.get_everything(
+        q= query,
+        language= 'en',
+        page_size=20,
+        page=2
+    )
+
+    articles_de_1 = api.get_everything(
+        q= query,
+        language= 'de',
+        page_size=20,
+        page=1
+    )
+
+    articles_de_2 = api.get_everything(
+        q= query,
+        language= 'de',
+        page_size=20,
+        page=2
+    )
+
+    return {
+        "en": extract_articles(articles_en_1) + extract_articles(articles_en_2),
+        "de": extract_articles(articles_de_1) + extract_articles(articles_de_2)
+    }
+
+def extract_articles(api_res):
+    out = []
+    for a in api_res["articles"]:
+        content = ""
+        if a["content"] is not None:
+            content = a["content"]
+        tmp = {
+            "author": str(a["author"].encode("utf-8")),
+            "url": a["url"],
+            "timestamp": int(dt.datetime.strptime(a["publishedAt"], "%Y-%m-%dT%H:%M:%SZ").timestamp()),
+            "title": str(a["title"].encode("utf-8")),
+            "description": str(a["description"].encode("utf-8")),
+            'content': str(content.encode("utf-8"))
+        }
+        out.append(tmp)
+    return out
+
 
 def extractWKN(soup):
     return soup.title.string.split(" | ")[-1][1:-1].split(",")[0]
@@ -69,7 +124,7 @@ def extractRivals(soup, current):
     for td in soup.find_all("td"):
         for a in td.find_all("a"):
             if len(a["href"].split("/")) > 2 and a["href"].split("/")[2] != current and a["href"].split("/")[1] == "aktien" and a["href"].split("-")[-1] == "aktie":
-                rivals.append(a["href"].split("/")[-1])
+                rivals.append(str(a["href"].split("/")[-1].encode("utf-8")))
     return rivals
 
 def extractName(soup):
@@ -176,7 +231,9 @@ def getToCrawl():
     return out
 
 def removeIdentical(li):
+    print('Removing identical stocks')
     filtered = []
+    i = 0
     for a in li:
         flag = True
         for b in filtered:
@@ -194,6 +251,9 @@ def removeIdentical(li):
                 break
         if len(filtered) == 0 or flag:
             filtered.append(a)
+        i += 1
+        if i%8 == 0:
+            print("{:03.2f}% done!".format(float(i)/len(li)*100))
     return filtered
 
 def extendToCrawl():
@@ -201,6 +261,7 @@ def extendToCrawl():
     new = []
     print("Began with {} stocks.".format(len(toCrawl)))
     for stock in toCrawl:
+        print('Doing {}'.format(stock))
         if stock not in new:
             timeout(True)
             res = requests.get(STUMP + "aktien/" + stock)
@@ -216,13 +277,14 @@ def extendToCrawl():
         os.remove(SAVEPATH + "stocks.txt")
         with open(SAVEPATH + "stocks.txt", "w") as f:
             for stock in new:
-                f.write(stock + "\n")
+                f.write(str(stock)+"\n")
         print("SAVED!")
+    return new
 
 if __name__ == "__main__":
-    extendToCrawl()
-    toCrawl = getToCrawl()
-    total = len(toCrawl)
+    #toCrawl = extendToCrawl()
+    toCrawl = np.random.choice(getToCrawl(), size=10, replace=False)
+    '''total = len(toCrawl)
     i = 0
     new = []
     for stock in toCrawl:
@@ -237,5 +299,14 @@ if __name__ == "__main__":
         os.remove(SAVEPATH + "stocks.txt")
         with open(SAVEPATH + "stocks.txt", "w") as f:
             for stock in new:
-                f.write(stock + "\n")
+                f.write(str(stock.encode("utf-8"))+"\n")
         print("SAVED!")
+    '''
+    total = len(toCrawl)
+    i = 0
+    new = []
+    for stock in toCrawl:
+        crawlStock(stock)
+        new.append(stock)
+        i += 1
+        print("FINISHED: {:03.2f}".format(float(i)/total*100))
