@@ -7,6 +7,7 @@ import json
 import os
 import numpy as np
 from newsapi import NewsApiClient
+import pandas as pd
 
 STUMP = "https://www.finanzen.net/"
 SAVEPATH = str((Path(__file__).parent / "../data/").resolve()) + "/"
@@ -17,35 +18,31 @@ NEWS_API = "20d6fa82bc7d4423b1b6fb50c73ee796"
 
 def make_api_calls(name):
     api = NewsApiClient(api_key=NEWS_API)
-    query = '+"{}"'.format(name.replace("_", " "))
+    query = '+"{}"'.format(name.lower().replace("_", " "))
     articles_en_1 = api.get_everything(
         q= query,
         language= 'en',
         page_size=20,
         page=1
     )
-
     articles_en_2 = api.get_everything(
         q= query,
         language= 'en',
         page_size=20,
         page=2
     )
-
     articles_de_1 = api.get_everything(
         q= query,
         language= 'de',
         page_size=20,
         page=1
     )
-
     articles_de_2 = api.get_everything(
         q= query,
         language= 'de',
         page_size=20,
         page=2
     )
-
     return {
         "en": extract_articles(articles_en_1) + extract_articles(articles_en_2),
         "de": extract_articles(articles_de_1) + extract_articles(articles_de_2)
@@ -58,12 +55,12 @@ def extract_articles(api_res):
         if a["content"] is not None:
             content = a["content"]
         tmp = {
-            "author": str(a["author"].encode("utf-8")),
+            "author": a["author"],
             "url": a["url"],
-            "timestamp": int(dt.datetime.strptime(a["publishedAt"], "%Y-%m-%dT%H:%M:%SZ").timestamp()),
-            "title": str(a["title"].encode("utf-8")),
-            "description": str(a["description"].encode("utf-8")),
-            'content': str(content.encode("utf-8"))
+            "timestamp": int(dt.strptime(a["publishedAt"], "%Y-%m-%dT%H:%M:%SZ").timestamp()),
+            "title": a["title"],
+            "description": a["description"],
+            'content': content
         }
         out.append(tmp)
     return out
@@ -124,7 +121,7 @@ def extractRivals(soup, current):
     for td in soup.find_all("td"):
         for a in td.find_all("a"):
             if len(a["href"].split("/")) > 2 and a["href"].split("/")[2] != current and a["href"].split("/")[1] == "aktien" and a["href"].split("-")[-1] == "aktie":
-                rivals.append(str(a["href"].split("/")[-1].encode("utf-8")))
+                rivals.append(a["href"].split("/")[-1])#.encode("utf-8"))
     return rivals
 
 def extractName(soup):
@@ -177,6 +174,11 @@ def extractHeaders(name):
         out['finanzen_en'].append((t, h))
     return out
 
+def update_entry(stock, ts):
+    df = pd.read_csv(SAVEPATH + "stocks.csv")
+    df.loc[df["stock"]==stock, "last_update"] = ts
+    df.to_csv(SAVEPATH + "stocks.csv", index=False)
+
 def crawlStock(name):
     if name[-6:] != "-aktie":
         name += "-aktie"
@@ -197,9 +199,14 @@ def crawlStock(name):
     stock_sample["rivals"] = extractRivals(comp_soup, name)
     print("Getting Text Data")
     txt_dict = extractHeaders(name)
-    txt_dict["newslookup"] = exctractEnText(name)
-    stock_sample["text_data"] = txt_dict
+    stock_sample["finanzen_de"] = txt_dict["finanzen_de"]
+    stock_sample["finanzen_en"] = txt_dict["finanzen_en"]
+    stock_sample["newslookup"] = exctractEnText(name)
+    txt_dict = make_api_calls(stock_sample["name"])
+    stock_sample["newsapi_de"] = txt_dict["de"]
+    stock_sample["newsapi_en"] = txt_dict["en"]
     print("Saving...")
+    update_entry(name, stock_sample["ts"])
     path = SAVEPATH + dt.now().strftime("%Y%m%d") + "/"
     try:
         os.mkdir(SAVEPATH)
@@ -216,11 +223,11 @@ def crawlStock(name):
 def timeout(long= False):
     tosleep = 1
     if long:
-        tosleep = np.random.normal(loc=2, scale=0.5)
+        tosleep = np.random.normal(loc=5, scale=1)
     else:
-        tosleep = np.random.normal(loc=0.5, scale=0.5)
+        tosleep = np.random.normal(loc=2, scale=0.5)
     if tosleep < 0.05:
-        tosleep = 0.5
+        tosleep = 2
     time.sleep(tosleep)
 
 def getToCrawl():
@@ -281,32 +288,69 @@ def extendToCrawl():
         print("SAVED!")
     return new
 
-if __name__ == "__main__":
-    #toCrawl = extendToCrawl()
-    toCrawl = np.random.choice(getToCrawl(), size=10, replace=False)
-    '''total = len(toCrawl)
-    i = 0
+def extend_stock_list(stock_li):
     new = []
-    for stock in toCrawl:
-        try:
-            crawlStock(stock)
-            new.append(stock)
-        except:
-            print("Error with {}".format(stock))
-        i += 1
-        print("FINISHED: {:03.2f}".format(float(i)/total*100))
-    if len(new) != len(toCrawl):
-        os.remove(SAVEPATH + "stocks.txt")
-        with open(SAVEPATH + "stocks.txt", "w") as f:
-            for stock in new:
-                f.write(str(stock.encode("utf-8"))+"\n")
-        print("SAVED!")
-    '''
+    for stock in stock_li:
+        timeout(True)
+        res = requests.get(STUMP + "aktien/" + stock)
+        soup = BeautifulSoup(res.content, features="lxml")
+        soup = getComparisonSoup(soup)
+        rivals = extractRivals(soup, stock)
+        for r in rivals:
+            if r not in stock_li and r not in new:
+                new.append(r)
+    print("Found {} new stocks".format(len(new)))
+    return new
+
+def select_to_crawl(df):
+    mask = df["last_update"] < round(time.time())-60*60*24*2
+    df = df[mask]
+    stocks = np.random.choice(df["stock"], replace=False, size=120 if df.shape[0] > 120 else df.shape[0])
+    return stocks
+
+def load_data(extend=False):
+    df = pd.read_csv(SAVEPATH + "stocks.csv")
+    if extend:
+        print(df.shape)
+        df.drop_duplicates(subset=["stock"], inplace=True)
+        print(df.shape)
+        stock_li = list(df["stock"])
+        new_stocks = extend_stock_list(stock_li)
+        for stock in new_stocks:
+            df = df.append({"stock": stock, "last_update": 0}, ignore_index=True)
+        df = df.reset_index(drop=True)
+        print(df.shape)
+        df.to_csv(SAVEPATH + "stocks.csv", index=False)
+    return select_to_crawl(df)
+
+
+if __name__ == "__main__":
+    #toCrawl = load_data()
+    '''stock="procter_gamble-aktie"
+    res = requests.get(STUMP + "aktien/" + stock)
+    soup = BeautifulSoup(res.content, features="lxml")
+    soup = getComparisonSoup(soup)
+    rivals = extractRivals(soup, stock)
+    tmp = {
+        "rivals": rivals
+    }
+    print(rivals)
+    path = SAVEPATH + dt.now().strftime("%Y%m%d") + "/"
+    try:
+        os.mkdir(SAVEPATH)
+    except:
+        True
+    try:
+        os.mkdir(path) 
+    except:
+        True
+    with open(path + stock + ".json", "w") as f:
+        json.dump(tmp, f)'''
+    toCrawl = load_data()
+    print("CRAWLING {}".format(len(toCrawl)))
     total = len(toCrawl)
     i = 0
-    new = []
     for stock in toCrawl:
         crawlStock(stock)
-        new.append(stock)
         i += 1
         print("FINISHED: {:03.2f}".format(float(i)/total*100))

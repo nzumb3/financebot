@@ -11,6 +11,7 @@ beautifulsoup4 = "*"
 requests = "*"
 lxml = "*"
 newsapi-python = "*"
+pandas = "*"
 
 [requires]
 python_version = "3.7"
